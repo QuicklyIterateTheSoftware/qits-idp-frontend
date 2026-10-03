@@ -1,6 +1,6 @@
 {
   "name": "qits-platform-spa-idp",
-  "version": "2026.1002.204927",
+  "version": "2026.1003.51743",
   "private": true,
   "description": "The identity provider's frontend: an Angular application that consumes @qits/ui-components from qits' own npm registry. It ships no image — qits-platform-idp serves it via Quinoa at /idp/.",
   "license": "MIT",
