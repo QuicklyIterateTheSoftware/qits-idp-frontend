@@ -7,6 +7,7 @@ import type {
   CreationOptionsJson,
   LoginRequest,
   RegisterRequest,
+  RegisterResult,
   ReturnLocation,
   RequestOptionsJson,
 } from './dto';
@@ -46,10 +47,14 @@ export class AuthApi {
     );
   }
 
-  /** Finish a registration with an attestation or a password. Sets the session cookie. */
-  register(request: RegisterRequest): Promise<AuthSession> {
+  /**
+   * Finish a registration with an attestation, or with neither factor to have the idp generate the
+   * account's password. Sets the session cookie; the generated password, when there is one, comes
+   * back exactly once on the result.
+   */
+  register(request: RegisterRequest): Promise<RegisterResult> {
     return firstValueFrom(
-      this.http.post<AuthSession>(`${this.base}/idp/api/auth/register`, request),
+      this.http.post<RegisterResult>(`${this.base}/idp/api/auth/register`, request),
     );
   }
 

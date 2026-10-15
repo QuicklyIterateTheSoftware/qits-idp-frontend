@@ -94,11 +94,23 @@ export interface AssertionJson {
   };
 }
 
-/** Both halves of the register request take the token; exactly one factor rides beside it. */
+/**
+ * Both halves of the register request take the token. An attestation rides beside it for a passkey
+ * registration; with neither, the idp generates the account's password itself and returns it once,
+ * on `RegisterResult`. There is no password field here — a request that carried one is refused.
+ */
 export interface RegisterRequest {
   readonly username: string;
   readonly token: string;
   readonly attestation?: AttestationJson;
+}
+
+/**
+ * What a finished registration answers with. `password` is set only when the account was made
+ * without a passkey: the idp generated it, this is the only time it is ever sent, and the page must
+ * show it once and never log it.
+ */
+export interface RegisterResult extends AuthSession {
   readonly password?: string;
 }
 
