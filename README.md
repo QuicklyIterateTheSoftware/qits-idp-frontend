@@ -111,10 +111,10 @@ Note what that pipeline installs from: the npm proxy behind it is qits-platform-
 `@qits` scope comes from qits-artifacts — so a run here cannot be green while either service is
 down. Their deploys are taken alone, with the CI queue empty.
 
-Installing on a developer machine needs a credential, and it is not in this repository. Every read
-through the edge authenticates, so both registries answer 401 without one; `.npmrc` here carries the
-routing only, and the `_auth` line comes from your own `~/.npmrc`, minted for your commissioned
-workstation client. CI takes both the addresses and the credential from the step environment.
+Installing on a developer machine needs a registry credential, and it is not in this repository:
+`.npmrc` here carries the routing only. `qits help guide --for workstation` sets up the credential
+(`qits registry-login --configure`). CI takes both the addresses and the credential from the step
+environment.
 
 ## Building
 
