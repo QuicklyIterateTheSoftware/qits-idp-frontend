@@ -47,6 +47,19 @@ type Pending = 'passkey' | 'password' | null;
  *
  * **No chrome around it**, by the route table rather than by anything here: this page is a sibling
  * of `QitsMainLayout`, not a child. See app.routes.ts.
+ *
+ * **A remembered device skips the form entirely.** Before drawing anything else, the page asks
+ * `POST /idp/api/auth/resume`, which reads the `qits-device` cookie a prior "Remember this device"
+ * login left behind. A 204 means a fresh session cookie is already set, so the page leaves exactly
+ * the way a password or passkey sign-in does — `arrive()` is the one place that decides where, and
+ * resuming reuses it rather than growing a second copy. Anything else — 401, because there is no
+ * remembered device, or a network failure, because none of this is worth distinguishing from "no" —
+ * falls through to the ordinary form. The brief "Signing you in…" state in between is what keeps a
+ * visible flash of the empty form from being the first thing a remembered browser sees.
+ *
+ * **"Remember this device" is checked by default** and rides on the login body on both paths — the
+ * passkey ceremony and the password call alike — because the choice is about this browser, not
+ * about which factor proved it.
  */
 @Component({
   selector: 'app-login-page',
@@ -56,76 +69,86 @@ type Pending = 'passkey' | 'password' | null;
   template: `
     <div class="card">
       <h1>Sign in</h1>
-      <p class="lede">To the qits platform.</p>
 
-      <form (submit)="$event.preventDefault()">
-        <label class="field">
-          <span class="label" id="username-label">Username</span>
-          <input
-            type="text"
-            class="text"
-            autocomplete="username webauthn"
-            spellcheck="false"
-            autocapitalize="none"
-            aria-labelledby="username-label"
-            [value]="username()"
-            (input)="onUsername($event)"
-            (keydown.enter)="withPasskey()"
-          />
-        </label>
+      @if (resuming()) {
+        <p class="lede">Signing you in…</p>
+      } @else {
+        <p class="lede">To the qits platform.</p>
 
-        @if (passkeys) {
-          <div class="actions">
-            <qits-button
-              variant="primary"
-              [disabled]="!named() || pending() !== null"
-              [busy]="pending() === 'passkey'"
-              (pressed)="withPasskey()"
-            >
-              Sign in with a passkey
-            </qits-button>
-          </div>
-          <p class="hint">Your authenticator answers. Nothing secret is typed on this page.</p>
-        } @else {
-          <p class="insecure">
-            Passkeys need localhost or https, and this address is neither — so there is no passkey
-            button here. A password works everywhere, including this address.
-          </p>
-        }
-
-        <div class="alternative">
+        <form (submit)="$event.preventDefault()">
           <label class="field">
-            <span class="label" id="password-label">Password</span>
+            <span class="label" id="username-label">Username</span>
             <input
-              type="password"
+              type="text"
               class="text"
-              autocomplete="current-password"
-              aria-labelledby="password-label"
-              [value]="password()"
-              (input)="onPassword($event)"
-              (keydown.enter)="withPassword()"
+              autocomplete="username webauthn"
+              spellcheck="false"
+              autocapitalize="none"
+              aria-labelledby="username-label"
+              [value]="username()"
+              (input)="onUsername($event)"
+              (keydown.enter)="withPasskey()"
             />
           </label>
-          <div class="actions">
-            <qits-button
-              [variant]="passkeys ? 'secondary' : 'primary'"
-              [disabled]="!named() || !password() || pending() !== null"
-              [busy]="pending() === 'password'"
-              (pressed)="withPassword()"
-            >
-              Sign in with a password
-            </qits-button>
+
+          <label class="remember">
+            <input type="checkbox" [checked]="remember()" (change)="onRemember($event)" />
+            Remember this device
+          </label>
+
+          @if (passkeys) {
+            <div class="actions">
+              <qits-button
+                variant="primary"
+                [disabled]="!named() || pending() !== null"
+                [busy]="pending() === 'passkey'"
+                (pressed)="withPasskey()"
+              >
+                Sign in with a passkey
+              </qits-button>
+            </div>
+            <p class="hint">Your authenticator answers. Nothing secret is typed on this page.</p>
+          } @else {
+            <p class="insecure">
+              Passkeys need localhost or https, and this address is neither — so there is no passkey
+              button here. A password works everywhere, including this address.
+            </p>
+          }
+
+          <div class="alternative">
+            <label class="field">
+              <span class="label" id="password-label">Password</span>
+              <input
+                type="password"
+                class="text"
+                autocomplete="current-password"
+                aria-labelledby="password-label"
+                [value]="password()"
+                (input)="onPassword($event)"
+                (keydown.enter)="withPassword()"
+              />
+            </label>
+            <div class="actions">
+              <qits-button
+                [variant]="passkeys ? 'secondary' : 'primary'"
+                [disabled]="!named() || !password() || pending() !== null"
+                [busy]="pending() === 'password'"
+                (pressed)="withPassword()"
+              >
+                Sign in with a password
+              </qits-button>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
 
-      @if (failure()) {
-        <p class="failed" role="alert">{{ failure() }}</p>
+        @if (failure()) {
+          <p class="failed" role="alert">{{ failure() }}</p>
+        }
+
+        <p class="elsewhere">
+          No account yet? <a routerLink="/register" queryParamsHandling="preserve">Register with a token</a>.
+        </p>
       }
-
-      <p class="elsewhere">
-        No account yet? <a routerLink="/register" queryParamsHandling="preserve">Register with a token</a>.
-      </p>
     </div>
   `,
 })
@@ -143,10 +166,18 @@ export class LoginPage {
 
   protected readonly username = signal('');
   protected readonly password = signal('');
+  protected readonly remember = signal(true);
   protected readonly pending = signal<Pending>(null);
   protected readonly failure = signal<string | null>(null);
 
+  /** True until the remembered-device check answers. The form is not drawn while this holds. */
+  protected readonly resuming = signal(true);
+
   protected readonly named = computed(() => this.username().trim().length > 0);
+
+  constructor() {
+    void this.resume();
+  }
 
   protected onUsername(event: Event): void {
     this.username.set((event.target as HTMLInputElement).value);
@@ -154,6 +185,24 @@ export class LoginPage {
 
   protected onPassword(event: Event): void {
     this.password.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onRemember(event: Event): void {
+    this.remember.set((event.target as HTMLInputElement).checked);
+  }
+
+  /**
+   * The one call this page makes before anything is drawn. A 204 is a login that already happened,
+   * so it leaves through `arrive()` exactly as a fresh one would; anything else — no remembered
+   * device, or no answer at all — is treated the same way and simply shows the form.
+   */
+  private async resume(): Promise<void> {
+    try {
+      await this.api.resume();
+      await this.arrive();
+    } catch {
+      this.resuming.set(false);
+    }
   }
 
   /** Options, ceremony, assertion — three calls, one of them to the authenticator. */
@@ -167,7 +216,11 @@ export class LoginPage {
       const credential = await this.browser.credentials?.get({
         publicKey: toRequestOptions(options),
       });
-      await this.api.login({ username, assertion: asAssertion(credential ?? null) });
+      await this.api.login({
+        username,
+        assertion: asAssertion(credential ?? null),
+        remember: this.remember(),
+      });
       await this.arrive();
     } catch (error) {
       this.refuse(error);
@@ -180,7 +233,11 @@ export class LoginPage {
     this.pending.set('password');
     this.failure.set(null);
     try {
-      await this.api.login({ username: this.username().trim(), password: this.password() });
+      await this.api.login({
+        username: this.username().trim(),
+        password: this.password(),
+        remember: this.remember(),
+      });
       await this.arrive();
     } catch (error) {
       this.refuse(error);

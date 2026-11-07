@@ -83,7 +83,21 @@ describe('LoginPage', () => {
     http = TestBed.inject(HttpTestingController);
   }
 
+  /**
+   * Opens the page and answers its `resume` call with a 401, exactly as a browser with no
+   * remembered device gets — which is what every test not about `resume` itself wants, so the
+   * form is on screen by the time this returns. `openResuming` below is the raw door for the specs
+   * that drive `resume` directly.
+   */
   async function open(url = '/login'): Promise<void> {
+    await openResuming(url);
+    http
+      .expectOne('/idp/api/auth/resume')
+      .flush(null, { status: 401, statusText: 'Unauthorized' });
+    await settle();
+  }
+
+  async function openResuming(url = '/login'): Promise<void> {
     harness = await RouterTestingHarness.create(url);
     await settle();
   }
@@ -132,6 +146,16 @@ describe('LoginPage', () => {
     const target = buttons().find((button) => (button.textContent ?? '').includes(label));
     expect(target, `no button reading "${label}"`).toBeTruthy();
     target?.click();
+    await settle();
+  }
+
+  async function toggle(selector: string, checked: boolean): Promise<void> {
+    const input = page().querySelector<HTMLInputElement>(selector);
+    expect(input, `no input matching ${selector}`).toBeTruthy();
+    if (input) {
+      input.checked = checked;
+      input.dispatchEvent(new Event('change'));
+    }
     await settle();
   }
 
@@ -201,6 +225,7 @@ describe('LoginPage', () => {
             userHandle: null,
           },
         },
+        remember: true,
       });
       login.flush(SESSION);
       await settle();
@@ -216,13 +241,57 @@ describe('LoginPage', () => {
       await press('password');
 
       const login = http.expectOne('/idp/api/auth/login');
-      expect(login.request.body).toEqual({ username: 'alice', password: 'hunter2' });
+      expect(login.request.body).toEqual({
+        username: 'alice',
+        password: 'hunter2',
+        remember: true,
+      });
       login.flush(SESSION);
       await settle();
       await landing();
 
       expect(assigned).toEqual(['https://wohlben.eu/']);
       expect(ceremonies).toHaveLength(0);
+    });
+
+    it('ticks "remember this device" by default', async () => {
+      await open();
+
+      const checkbox = page().querySelector<HTMLInputElement>('input[type="checkbox"]');
+      expect(checkbox?.checked).toBe(true);
+    });
+
+    it('sends remember: false on the password path once the checkbox is unticked', async () => {
+      await open();
+      await type('input[autocomplete="username webauthn"]', 'alice');
+      await toggle('input[type="checkbox"]', false);
+      await type('input[type="password"]', 'hunter2');
+      await press('password');
+
+      const login = http.expectOne('/idp/api/auth/login');
+      expect(login.request.body).toEqual({
+        username: 'alice',
+        password: 'hunter2',
+        remember: false,
+      });
+      login.flush(SESSION);
+      await settle();
+      await landing();
+    });
+
+    it('sends remember: false on the passkey path once the checkbox is unticked', async () => {
+      await open();
+      await type('input[autocomplete="username webauthn"]', 'alice');
+      await toggle('input[type="checkbox"]', false);
+      await press('passkey');
+      http.expectOne('/idp/api/auth/login-options').flush({ challenge: 'BAUG' });
+      await settle();
+
+      const login = http.expectOne('/idp/api/auth/login');
+      expect((login.request.body as { remember: boolean }).remember).toBe(false);
+      login.flush(SESSION);
+      await settle();
+      await landing();
     });
 
     it('honours a same-origin redirect from the edge', async () => {
@@ -321,6 +390,71 @@ describe('LoginPage', () => {
 
       expect(page().querySelector('[role="alert"]')?.textContent).toContain('dismissed');
       expect(assigned).toEqual([]);
+    });
+  });
+
+  describe('resuming a remembered device', () => {
+    beforeEach(() => configure(capable()));
+
+    it('shows a brief state and no form while the resume call is in flight', async () => {
+      await openResuming();
+
+      expect(page().textContent).toContain('Signing you in');
+      expect(page().querySelector('form')).toBeNull();
+      http.expectOne('/idp/api/auth/resume').flush(null, { status: 401, statusText: 'Unauthorized' });
+      await settle();
+    });
+
+    it('follows the return location on a 204, exactly as a fresh login would, without ever showing the form', async () => {
+      await openResuming();
+
+      http.expectOne('/idp/api/auth/resume').flush(null, { status: 204, statusText: 'No Content' });
+      await settle();
+      await landing();
+
+      expect(assigned).toEqual(['https://wohlben.eu/']);
+      expect(page().querySelector('form')).toBeNull();
+    });
+
+    it('follows a cross-host return target from a resumed session too', async () => {
+      await openResuming('/login?return_host=prod.wohlben.eu&return_path=%2Fprojects%2F7');
+
+      http.expectOne('/idp/api/auth/resume').flush(null, { status: 204, statusText: 'No Content' });
+      await settle();
+      const destination = http.expectOne(
+        (request) =>
+          request.url === '/idp/api/auth/return-location' &&
+          request.params.get('return_host') === 'prod.wohlben.eu' &&
+          request.params.get('return_path') === '/projects/7',
+      );
+      destination.flush({ location: 'https://prod.wohlben.eu/projects/7' });
+      await settle();
+
+      expect(assigned).toEqual(['https://prod.wohlben.eu/projects/7']);
+    });
+
+    it('shows the ordinary form when there is no remembered device', async () => {
+      await openResuming();
+
+      http
+        .expectOne('/idp/api/auth/resume')
+        .flush(null, { status: 401, statusText: 'Unauthorized' });
+      await settle();
+
+      expect(page().textContent).not.toContain('Signing you in');
+      expect(page().querySelector('form')).toBeTruthy();
+      expect(buttons().some((button) => button.textContent?.includes('passkey'))).toBe(true);
+    });
+
+    it('also falls back to the form when the resume call cannot be answered at all', async () => {
+      await openResuming();
+
+      http
+        .expectOne('/idp/api/auth/resume')
+        .error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
+      await settle();
+
+      expect(page().querySelector('form')).toBeTruthy();
     });
   });
 

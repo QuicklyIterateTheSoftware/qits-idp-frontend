@@ -87,8 +87,10 @@ describe('App', () => {
 
     expect(layout.tagName.toLowerCase()).toBe('qits-main-layout');
     expect(layout.querySelector('main app-devices-page')).not.toBeNull();
-    // The page reads its own listing on arrival; answering it here keeps `verify` about the chrome.
+    // The page reads both its own listings on arrival; answering them here keeps `verify` about
+    // the chrome.
     http.expectOne('/idp/api/devices').flush([]);
+    http.expectOne('/idp/api/remembered-devices').flush([]);
     http.verify();
   });
 
@@ -100,6 +102,10 @@ describe('App', () => {
     const shell = harness.fixture.nativeElement as HTMLElement;
     expect(shell.querySelector('qits-main-layout')).toBeNull();
     expect(shell.querySelector('nav a')).toBeNull();
+    // The page's first call, before any form: answering it here keeps `verify` about the chrome.
+    http
+      .expectOne('/idp/api/auth/resume')
+      .flush(null, { status: 401, statusText: 'Unauthorized' });
     http.verify();
   });
 
