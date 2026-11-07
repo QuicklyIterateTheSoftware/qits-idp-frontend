@@ -114,11 +114,16 @@ export interface RegisterResult extends AuthSession {
   readonly password?: string;
 }
 
-/** Login takes no token. Exactly one factor, same as register. */
+/**
+ * Login takes no token. Exactly one factor, same as register. `remember`, when true, asks the idp
+ * to also set a `qits-device` cookie, which a later visit's `resume` call can trade for a fresh
+ * session with no form at all.
+ */
 export interface LoginRequest {
   readonly username: string;
   readonly assertion?: AssertionJson;
   readonly password?: string;
+  readonly remember?: boolean;
 }
 
 /**
@@ -136,4 +141,23 @@ export interface Device {
   readonly createdAt: string;
   readonly expiresAt: string;
   readonly revokedAt: string | null;
+}
+
+/**
+ * One browser the idp was told to remember: the `qits-device` cookie a "Remember this device"
+ * login leaves behind, which a later `resume` call trades for a session with no form at all.
+ *
+ * `label` is the User-Agent the browser sent when the cookie was set, capped at 200 characters by
+ * the server — there is no structured kind here, unlike `Device`, because a browser's own string is
+ * the only thing the idp ever had to say about it. `current` marks the device the page itself is
+ * being read from, which is otherwise indistinguishable from any other row in this list.
+ */
+export interface RememberedDevice {
+  readonly id: string;
+  readonly label: string;
+  readonly createdAt: string;
+  readonly lastUsedAt: string;
+  readonly expiresAt: string;
+  readonly absoluteExpiresAt: string;
+  readonly current: boolean;
 }

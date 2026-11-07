@@ -65,9 +65,28 @@ export class AuthApi {
     );
   }
 
-  /** Finish a sign-in with an assertion or a password. Sets the session cookie. */
+  /**
+   * Finish a sign-in with an assertion or a password. Sets the session cookie, and — when the
+   * request carries `remember: true` — the `qits-device` cookie `resume` later reads.
+   */
   login(request: LoginRequest): Promise<AuthSession> {
     return firstValueFrom(this.http.post<AuthSession>(`${this.base}/idp/api/auth/login`, request));
+  }
+
+  /**
+   * The login page's first call, before any form is drawn. No body: the `qits-device` cookie from
+   * an earlier "Remember this device" login is what the server reads. Resolving means a fresh
+   * `qits-session` cookie is already set, so the caller leaves exactly as a fresh login would —
+   * rejecting (401, with no remembered device and that cookie cleared, or any other failure) means
+   * there is nothing to resume and the caller falls back to the form.
+   */
+  resume(): Promise<void> {
+    return firstValueFrom(this.http.post<void>(`${this.base}/idp/api/auth/resume`, null));
+  }
+
+  /** End this session and forget this device: the service clears both cookies. */
+  logout(): Promise<void> {
+    return firstValueFrom(this.http.post<void>(`${this.base}/idp/api/auth/logout`, null));
   }
 
   /**
