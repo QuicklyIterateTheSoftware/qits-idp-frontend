@@ -6,7 +6,7 @@ import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../app.routes';
 import { AUTH_BROWSER, type AuthBrowser } from '../auth/browser';
-import type { Device, RememberedDevice } from '../api/dto';
+import type { Device, Passkey, RememberedDevice } from '../api/dto';
 
 /**
  * The signed-in devices page, driven through the router with the service answered by
@@ -71,6 +71,19 @@ describe('DevicesPage', () => {
     current: false,
   };
 
+  /** A platform authenticator with no particular make to report. */
+  const SOFTWARE_PASSKEY: Passkey = {
+    credentialId: '33333333-aaaa-bbbb-cccc-000000000001',
+    aaguid: '00000000-0000-0000-0000-000000000000',
+    createdAt: '2026-08-01T09:00:00Z',
+  };
+
+  const HARDWARE_PASSKEY: Passkey = {
+    credentialId: '44444444-dddd-eeee-ffff-000000000002',
+    aaguid: 'ee882879-721c-4913-9775-3dfcce97072a',
+    createdAt: '2026-08-02T09:00:00Z',
+  };
+
   function browser(): AuthBrowser {
     return {
       secureContext: true,
@@ -96,15 +109,17 @@ describe('DevicesPage', () => {
 
   afterEach(() => http.verify());
 
-  /** Opens the page and answers both lists it reads on arrival, in whichever order they land. */
+  /** Opens the page and answers all three lists it reads on arrival, in whichever order they land. */
   async function open(
     devices: Device[],
     remembered: RememberedDevice[] = [],
+    passkeys: Passkey[] = [],
   ): Promise<void> {
     harness = await RouterTestingHarness.create('/devices');
     await settle();
     http.expectOne('/idp/api/devices').flush(devices);
     http.expectOne('/idp/api/remembered-devices').flush(remembered);
+    http.expectOne('/idp/api/passkeys').flush(passkeys);
     await settle();
   }
 
@@ -131,6 +146,14 @@ describe('DevicesPage', () => {
     return Array.from(
       (harness.fixture.nativeElement as HTMLElement).querySelectorAll(
         'section.remembered qits-button button',
+      ),
+    );
+  }
+
+  function passkeyRemoveButtons(): HTMLElement[] {
+    return Array.from(
+      (harness.fixture.nativeElement as HTMLElement).querySelectorAll(
+        'section.passkeys qits-button button',
       ),
     );
   }
@@ -246,6 +269,87 @@ describe('DevicesPage', () => {
 
       expect(text()).toContain('That browser could not be forgotten.');
       expect(text()).not.toContain('not_found');
+    });
+  });
+
+  describe('passkeys', () => {
+    it('says what an empty list means rather than showing an empty table', async () => {
+      await open([CLI], [], []);
+
+      expect(text()).toContain('No passkeys.');
+    });
+
+    it('lists each passkey, naming a software key by its lack of a make', async () => {
+      await open([CLI], [], [SOFTWARE_PASSKEY, HARDWARE_PASSKEY]);
+
+      expect(text()).toContain('Software key');
+      expect(text()).toContain(HARDWARE_PASSKEY.aaguid);
+      expect(passkeyRemoveButtons()).toHaveLength(2);
+    });
+
+    it('says one plain thing when the list of passkeys could not be read', async () => {
+      harness = await RouterTestingHarness.create('/devices');
+      await settle();
+      http.expectOne('/idp/api/devices').flush([CLI]);
+      http.expectOne('/idp/api/remembered-devices').flush([]);
+      http
+        .expectOne('/idp/api/passkeys')
+        .flush({ error: 'server_error' }, { status: 500, statusText: 'Internal Server Error' });
+      await settle();
+
+      expect(text()).toContain('The list of passkeys could not be read.');
+    });
+
+    it('removes one passkey and re-reads the list', async () => {
+      await open([CLI], [], [SOFTWARE_PASSKEY, HARDWARE_PASSKEY]);
+
+      passkeyRemoveButtons()[1].dispatchEvent(new Event('click'));
+      await settle();
+
+      const remove = http.expectOne(`/idp/api/passkeys/${HARDWARE_PASSKEY.credentialId}`);
+      expect(remove.request.method).toBe('DELETE');
+      remove.flush(null, { status: 204, statusText: 'No Content' });
+      await settle();
+
+      http.expectOne('/idp/api/passkeys').flush([SOFTWARE_PASSKEY]);
+      await settle();
+
+      expect(text()).not.toContain(HARDWARE_PASSKEY.aaguid);
+      expect(passkeyRemoveButtons()).toHaveLength(1);
+    });
+
+    it('shows the service’s message when removing the last passkey is refused, and keeps the row', async () => {
+      await open([CLI], [], [SOFTWARE_PASSKEY]);
+
+      passkeyRemoveButtons()[0].dispatchEvent(new Event('click'));
+      await settle();
+      http.expectOne(`/idp/api/passkeys/${SOFTWARE_PASSKEY.credentialId}`).flush(
+        {
+          error: 'last_passkey',
+          error_description: 'This is your only way to sign in. Set a password first.',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+
+      expect(text()).toContain('This is your only way to sign in. Set a password first.');
+      expect(passkeyRemoveButtons()).toHaveLength(1);
+    });
+
+    it('falls back to a fixed sentence when a 409 carries no message', async () => {
+      await open([CLI], [], [SOFTWARE_PASSKEY]);
+
+      passkeyRemoveButtons()[0].dispatchEvent(new Event('click'));
+      await settle();
+      http
+        .expectOne(`/idp/api/passkeys/${SOFTWARE_PASSKEY.credentialId}`)
+        .flush(null, { status: 409, statusText: 'Conflict' });
+      await settle();
+
+      expect(text()).toContain(
+        'This is your only way to sign in. Set a password or add another passkey first.',
+      );
+      expect(passkeyRemoveButtons()).toHaveLength(1);
     });
   });
 

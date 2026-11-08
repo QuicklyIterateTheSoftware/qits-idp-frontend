@@ -87,10 +87,11 @@ describe('App', () => {
 
     expect(layout.tagName.toLowerCase()).toBe('qits-main-layout');
     expect(layout.querySelector('main app-devices-page')).not.toBeNull();
-    // The page reads both its own listings on arrival; answering them here keeps `verify` about
-    // the chrome.
+    // The page reads all three of its own listings on arrival; answering them here keeps `verify`
+    // about the chrome.
     http.expectOne('/idp/api/devices').flush([]);
     http.expectOne('/idp/api/remembered-devices').flush([]);
+    http.expectOne('/idp/api/passkeys').flush([]);
     http.verify();
   });
 

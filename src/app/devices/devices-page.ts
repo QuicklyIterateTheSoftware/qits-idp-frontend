@@ -1,11 +1,33 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { QitsBadge, QitsButton } from '@qits/ui-components';
 import { AuthApi } from '../api/auth-api';
 import { DevicesApi } from '../api/devices-api';
-import type { Device, RememberedDevice } from '../api/dto';
+import type { Device, Passkey, RememberedDevice } from '../api/dto';
 import { AUTH_BROWSER } from '../auth/browser';
 import { Empty } from '../ui/empty';
+
+/** The aaguid a platform authenticator with no particular make to report sends. See `dto.ts`. */
+const SOFTWARE_KEY_AAGUID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * What the service's 409 on a passkey removal says on screen — "it is your last one and you have no
+ * password" — read from the same `{ error, error_description }` body every door on this service
+ * answers with. Every other failure gets the one plain sentence the rest of this page uses, matching
+ * `revoke`'s and `revokeRemembered`'s rule: a body is not a browser's to relay except where, like
+ * here, it is the one thing the reader needs to do next.
+ */
+function passkeyRemovalFailure(error: unknown): string {
+  if (error instanceof HttpErrorResponse && error.status === 409) {
+    const body = error.error as { error_description?: unknown } | null;
+    if (typeof body?.error_description === 'string' && body.error_description) {
+      return body.error_description;
+    }
+    return 'This is your only way to sign in. Set a password or add another passkey first.';
+  }
+  return 'That passkey could not be removed. Reload the page and try again.';
+}
 
 /**
  * Everything signed in as this person, and a button that ends any of it.
@@ -35,6 +57,12 @@ import { Empty } from '../ui/empty';
  * `POST /idp/api/auth/resume`. They are revoked through different doors and the two lists are never
  * merged — `current` marks the row for the browser this page is open in, which is otherwise
  * indistinguishable from any other.
+ *
+ * **"Passkeys" is a third, separate list again.** These are the account's WebAuthn credentials —
+ * what register and login's passkey ceremony created — and removing one is a plain `DELETE`, not a
+ * revocation with a grace period: it is gone immediately. The service refuses to remove the
+ * account's last passkey while it has no password, answering 409, because that passkey is the only
+ * way left to sign in; the row stays and the section's failure paragraph shows why.
  *
  * **"Sign out" ends the session and leaves.** It is a full document navigation to `/idp/login`,
  * the same `AUTH_BROWSER.assign` the auth pages use to arrive, because a `qits-session` cookie that
@@ -242,6 +270,56 @@ import { Empty } from '../ui/empty';
         </table>
       }
     </section>
+
+    <section class="passkeys">
+      <h2>Passkeys</h2>
+      <p class="lede">
+        Every passkey registered for this account. Removing one is immediate, with no grace period —
+        unlike a credential family above, a passkey holds no separate record of its own sessions to
+        revoke.
+      </p>
+
+      @if (passkeysFailure()) {
+        <p class="failed" role="alert">{{ passkeysFailure() }}</p>
+      }
+
+      @if (passkeys().length === 0) {
+        @if (!passkeysLoading()) {
+          <app-empty message="No passkeys." />
+        }
+      } @else {
+        <table>
+          <thead>
+            <tr>
+              <th>Added</th>
+              <th>Authenticator</th>
+              <th>Key</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (passkey of passkeys(); track passkey.credentialId) {
+              <tr>
+                <td>{{ passkey.createdAt | date: 'medium' }}</td>
+                <td>{{ authenticator(passkey) }}</td>
+                <td [title]="passkey.credentialId">{{ key(passkey) }}</td>
+                <td class="actions">
+                  <qits-button
+                    variant="secondary"
+                    size="sm"
+                    [busy]="removingPasskey() === passkey.credentialId"
+                    [disabled]="removingPasskey() !== null"
+                    (pressed)="removePasskey(passkey)"
+                  >
+                    Remove
+                  </qits-button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
   `,
 })
 export class DevicesPage {
@@ -259,11 +337,17 @@ export class DevicesPage {
   protected readonly revokingRemembered = signal<string | null>(null);
   protected readonly rememberedFailure = signal<string | null>(null);
 
+  protected readonly passkeys = signal<readonly Passkey[]>([]);
+  protected readonly passkeysLoading = signal(true);
+  protected readonly removingPasskey = signal<string | null>(null);
+  protected readonly passkeysFailure = signal<string | null>(null);
+
   protected readonly signingOut = signal(false);
 
   constructor() {
     void this.reload();
     void this.reloadRemembered();
+    void this.reloadPasskeys();
   }
 
   protected label(device: Device): string {
@@ -327,6 +411,43 @@ export class DevicesPage {
       );
     } finally {
       this.rememberedLoading.set(false);
+    }
+  }
+
+  /** `Software key` for the all-zero aaguid a platform authenticator reports, the raw id otherwise. */
+  protected authenticator(passkey: Passkey): string {
+    return passkey.aaguid === SOFTWARE_KEY_AAGUID ? 'Software key' : passkey.aaguid;
+  }
+
+  /** The first twelve characters of the credential id — the full id is on the cell's `title`. */
+  protected key(passkey: Passkey): string {
+    return `${passkey.credentialId.slice(0, 12)}…`;
+  }
+
+  protected async removePasskey(passkey: Passkey): Promise<void> {
+    if (this.removingPasskey()) return;
+    this.removingPasskey.set(passkey.credentialId);
+    this.passkeysFailure.set(null);
+    try {
+      await this.api.removePasskey(passkey.credentialId);
+      await this.reloadPasskeys();
+    } catch (error) {
+      this.passkeysFailure.set(passkeyRemovalFailure(error));
+    } finally {
+      this.removingPasskey.set(null);
+    }
+  }
+
+  private async reloadPasskeys(): Promise<void> {
+    this.passkeysLoading.set(true);
+    try {
+      this.passkeys.set(await this.api.passkeys());
+    } catch {
+      this.passkeysFailure.set(
+        'The list of passkeys could not be read. Reload the page to try again.',
+      );
+    } finally {
+      this.passkeysLoading.set(false);
     }
   }
 
