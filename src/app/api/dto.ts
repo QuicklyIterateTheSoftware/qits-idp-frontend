@@ -161,3 +161,17 @@ export interface RememberedDevice {
   readonly absoluteExpiresAt: string;
   readonly current: boolean;
 }
+
+/**
+ * One passkey this account registered, oldest first as the server lists them.
+ *
+ * `aaguid` identifies the authenticator model, not the individual key — a `00000000-0000-0000-0000-000000000000`
+ * value is what a platform authenticator with no particular make to report sends, and the page reads
+ * it as "Software key" rather than printing the all-zero id. `credentialId` is the WebAuthn
+ * credential id, base64url, and is the only thing that tells two of this account's passkeys apart.
+ */
+export interface Passkey {
+  readonly credentialId: string;
+  readonly aaguid: string;
+  readonly createdAt: string;
+}
