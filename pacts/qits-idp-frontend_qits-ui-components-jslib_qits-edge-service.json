@@ -18,7 +18,7 @@
           "qits-via": {
             "artifact": "@qits/ui-components",
             "repository": "qits-ui-components-jslib",
-            "version": "2026.1109.192723"
+            "version": "2026.1109.200159"
           }
         }
       },
