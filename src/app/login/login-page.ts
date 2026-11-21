@@ -46,7 +46,7 @@ type Pending = 'passkey' | 'password' | null;
  * of braces.
  *
  * **No chrome around it**, by the route table rather than by anything here: this page is a sibling
- * of `QitsMainLayout`, not a child. See app.routes.ts.
+ * of `AdminFrame`, not a child. See app.routes.ts.
  *
  * **A remembered device skips the form entirely.** Before drawing anything else, the page asks
  * `POST /idp/api/auth/resume`, which reads the `qits-device` cookie a prior "Remember this device"
@@ -146,7 +146,8 @@ type Pending = 'passkey' | 'password' | null;
         }
 
         <p class="elsewhere">
-          No account yet? <a routerLink="/register" queryParamsHandling="preserve">Register with a token</a>.
+          No account yet?
+          <a routerLink="/register" queryParamsHandling="preserve">Register with a token</a>.
         </p>
       }
     </div>

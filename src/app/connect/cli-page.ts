@@ -32,7 +32,7 @@ import { AUTH_BROWSER } from '../auth/browser';
  * one useful thing, which is run `qits login` again. So that is the whole message; the code is in
  * the terminal's hands, not theirs.
  *
- * No chrome around it, by the route table: this is a sibling of `QitsMainLayout`, like `login` and
+ * No chrome around it, by the route table: this is a sibling of `AdminFrame`, like `login` and
  * `register`. It renders with no session and must — the person may have been signed in already, and
  * a page that demanded one would bounce the finished flow back into a login.
  */

@@ -1,27 +1,23 @@
 # qits-idp-platform-frontend
 
-The identity provider's frontend: the two pages a person arrives at, and the two an operator
-administers. Served by qits-platform-idp itself at `/idp/` through Quinoa. Four routes, and they
-split down the middle.
+The identity provider's frontend: three public pages and three administrative ones. Served by
+qits-platform-idp itself at `/idp/` through Quinoa.
 
-- **`/idp/login`** — where a person signs in, with a passkey or a password. No platform chrome.
-- **`/idp/register`** — where a person spends a register token to make an account. No chrome.
-- **`/idp/clients`** — the clients this provider issues tokens to, inside the chrome.
-- **`/idp/users`** — the people who will hold an account, inside the chrome.
+- **`/idp/login`** — where a person signs in, with a passkey or a password.
+- **`/idp/register`** — where a person spends a register token to make an account.
+- **`/idp/connect/cli`** — where a person confirms a CLI sign-in code.
+- **`/idp/clients`**, **`/idp/users`**, **`/idp/devices`** — the administrative pages.
 
-**Two of these render no chrome, and that is the shape rather than an omission.** A sidebar full of
-links to services the visitor has not been admitted to is an invitation to click something that
-will refuse them, and a top bar naming the signed-in user is a lie on the page where nobody is. So
-`login` and `register` are top-level routes, siblings of `QitsMainLayout` instead of children of
-it. The two administrative pages sit inside it like every other explorer's pages do.
+**No page draws navigation of its own** (qits-2481). The public pages show nothing but themselves.
+The administrative pages are shown only inside the landing app, in an iframe in its main slot,
+and the landing app's sidebar is their navigation. They sit in `AdminFrame`, which gives them
+padding and nothing else.
 
 **Every page loads lazily, and this is the platform's first SPA to do that.** The split above is
 the reason. Someone at `/idp/login` is by definition not yet allowed to see a client roster, so
 shipping the admin pages in the bundle that draws the sign-in form makes the most public page on
 the platform pay for code it can never use — and the reverse, an operator downloading a sign-in
-form to reach `/idp/clients`, is no better. `QitsMainLayout` stays an eager import: it is the frame
-the pages arrive in, not a page, and a frame in its own chunk would show a blank application while
-it loaded.
+form to reach `/idp/clients`, is no better.
 
 **The two auth pages are real; the two administrative ones are still placeholders.** `login` and
 `register` talk to `/idp/api/auth/*` — passkeys through `navigator.credentials`, with a password
@@ -93,10 +89,6 @@ page never reads; a cross-origin arrangement would drop it and the second call w
 nothing on screen to explain why. `http://localhost:4200` is a secure context in its own right, so
 passkeys run here — but the relying-party id the service is configured with must match the host the
 browser is on, or the authenticator refuses before any request is made.
-
-The platform chrome asks the gateway for `/main-navigation`, which `ng serve` does not proxy — so
-the sidebar renders "Navigation unavailable" on the two administrative pages. That is the intended
-degraded state, not a fault. The two auth pages mount no chrome and are unaffected.
 
 ## Running the checks
 

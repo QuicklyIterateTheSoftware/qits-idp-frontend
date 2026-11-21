@@ -1,5 +1,5 @@
 /* The two pages that render outside the platform chrome, which is why they need a sheet of their
-   own at all: with no `QitsMainLayout` around them there is no container, no width and no padding
+   own at all: with no `AdminFrame` around them there is no container, no width and no padding
    but what is written here.
 
    A single centred column holding a form. The column is centred; its contents are not. A label
