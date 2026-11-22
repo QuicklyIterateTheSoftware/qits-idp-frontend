@@ -1,10 +1,7 @@
-/* The furniture the two administrative pages share: a heading block and a closing note. Pulled
-   into each page component through `styleUrls` rather than into the global stylesheet, so it stays
-   scoped by Angular's emulated encapsulation and a page can still override a rule locally.
-
-   It is the sibling explorers' sheet, trimmed to what a page with no data in it uses. The table
-   rules are not copied ahead of a table: whatever `/idp/api/clients` turns out to render will bring
-   its own shape, and copying spa-mirror's columns now would be guessing at it. */
+/* The furniture the administrative pages share: a heading block, a table, a failure line and a
+   closing note. Pulled into each page component through `styleUrls` rather than into the global
+   stylesheet, so it stays scoped by Angular's emulated encapsulation and a page can still override
+   a rule locally. */
 
 :host {
   display: block;
@@ -25,4 +22,30 @@
   margin: 0.75rem 0 0;
   color: #6b7280;
   font-size: 0.88rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th {
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  padding: 0.4rem 0.6rem 0.4rem 0;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+td {
+  padding: 0.55rem 0.6rem 0.55rem 0;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+
+.failed {
+  margin: 0.9rem 0 0;
+  color: #b91c1c;
 }

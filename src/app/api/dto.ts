@@ -175,3 +175,24 @@ export interface Passkey {
   readonly aaguid: string;
   readonly createdAt: string;
 }
+
+/**
+ * One account, as `GET /idp/api/users` answers it (qits-1260): its name, when it was made, and its
+ * roles. Never a credential.
+ */
+export interface User {
+  readonly username: string;
+  readonly createdAt: string;
+  readonly roles: readonly string[];
+}
+
+/**
+ * One service client, as `GET /idp/api/service-clients` answers it: the `idp:client` a service's
+ * deployment declares. `source` is always `database`. Never a secret.
+ */
+export interface ServiceClient {
+  readonly clientId: string;
+  readonly source: string;
+  readonly createdAt: string;
+  readonly rotatedAt: string | null;
+}

@@ -1,45 +1,92 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { AdminApi, readFailure } from '../api/admin-api';
+import type { ServiceClient } from '../api/dto';
 import { Empty } from '../ui/empty';
 
 /**
- * The clients this identity provider issues tokens to — and, today, an empty state explaining why
- * the list is not here yet.
+ * The service clients this identity provider issues tokens to (qits-2531):
+ * `GET /idp/api/service-clients`, read with the session.
  *
- * **The blocker is authentication, not effort.** `GET /idp/api/clients` authenticates with a
- * client's own id and secret over HTTP Basic — the same `client_secret_basic` pair the token
- * endpoint takes — and it answers with that caller's own commissions, nothing wider. A browser has
- * no such pair: there is no session to derive one from until the login flow beside this page is
- * real, and a page that asked a person to paste a client secret into it would be teaching exactly
- * the habit an identity provider exists to end. So this page reads nothing rather than reading it
- * badly, and no `HttpClient` call is written here to be switched on later under a different
- * credential model.
+ * Every service a deployment declares with `idp:client` has one row. The service sends no secret.
+ * The list needs an account with `qits:admin`, and any other session is told so.
  *
- * **What it becomes is a roster of the caller's own commissions**, not an administrator's view of
- * every client on the platform — the service has no cross-owner listing to draw one from. Whether
- * it ever should is a question for the service, and it is not answered by a client guessing.
+ * Commissioned clients — the short-lived credentials a service makes for one context, such as a
+ * CI run — are not listed: `GET /idp/api/clients` shows a service only its own, over its own
+ * Basic pair, and there is no listing across owners.
  */
 @Component({
   selector: 'app-clients-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Empty],
+  imports: [DatePipe, Empty],
   styleUrls: ['../ui/page.css'],
   template: `
     <header class="head">
       <h1>Clients</h1>
       <p class="lede">
-        The services and workstations this identity provider issues tokens to. Each one holds an id
-        and a secret, and asks for a token with them.
+        The services this identity provider issues tokens to. Each one holds an id and a secret, and
+        asks for a token with them.
       </p>
     </header>
 
-    <app-empty
-      message="No client is listed. Reading the roster means presenting a client's own id and secret, which this page cannot do until there is a signed-in session to take one from."
-    />
+    @if (failure()) {
+      <p class="failed" role="alert">{{ failure() }}</p>
+    } @else if (clients().length === 0) {
+      @if (!loading()) {
+        <app-empty message="There are no service clients." />
+      }
+    } @else {
+      <table>
+        <thead>
+          <tr>
+            <th>Client id</th>
+            <th>Created</th>
+            <th>Secret rotated</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (client of clients(); track client.clientId) {
+            <tr>
+              <td>{{ client.clientId }}</td>
+              <td>{{ client.createdAt | date: 'medium' }}</td>
+              <td>
+                @if (client.rotatedAt) {
+                  {{ client.rotatedAt | date: 'medium' }}
+                } @else {
+                  Never
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
 
     <p class="note">
-      The clients themselves are not affected by any of this: they authenticate directly at
-      <code>/idp/token</code> and are unaffected by what this page can or cannot show.
+      The same list is on the command line: <code>qits service-clients list</code>. Secrets are
+      never shown.
     </p>
   `,
 })
-export class ClientsPage {}
+export class ClientsPage {
+  private readonly api = inject(AdminApi);
+
+  protected readonly clients = signal<ServiceClient[]>([]);
+  protected readonly loading = signal(true);
+  protected readonly failure = signal<string | null>(null);
+
+  constructor() {
+    void this.load();
+  }
+
+  private async load(): Promise<void> {
+    try {
+      const clients = await this.api.serviceClients();
+      this.clients.set([...clients].sort((a, b) => a.clientId.localeCompare(b.clientId)));
+    } catch (error) {
+      this.failure.set(readFailure(error, 'service clients'));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+}

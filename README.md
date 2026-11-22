@@ -19,11 +19,12 @@ shipping the admin pages in the bundle that draws the sign-in form makes the mos
 the platform pay for code it can never use — and the reverse, an operator downloading a sign-in
 form to reach `/idp/clients`, is no better.
 
-**The two auth pages are real; the two administrative ones are still placeholders.** `login` and
-`register` talk to `/idp/api/auth/*` — passkeys through `navigator.credentials`, with a password
-beside them — because that surface now exists. `clients` and `users` still draw an empty state and
-read nothing, for the reason below. The rule that kept the first two empty has not changed, it has
-been satisfied: a form is drawn once its backend answers, and not one commit sooner.
+**Every page reads its real API.** `login` and `register` talk to `/idp/api/auth/*`. The
+administrative pages read with the session cookie (qits-2531): `users` lists `GET /idp/api/users`,
+`clients` lists `GET /idp/api/service-clients` — one row per service's `idp:client`, never a secret
+— and `devices` lists the account's own credentials. `users` and `clients` need an account with
+`qits:admin`; any other session is told so. The CLI reads the same APIs: `qits users list` and
+`qits service-clients list`.
 
 **Passkeys need a secure context, and one real address does not have one.** `localhost` and
 loopback count as secure over plain http, so the ordinary `http://localhost:8080` route runs the
@@ -38,13 +39,9 @@ the installation's first administrator. Users are per-installation by decision, 
 platform starts from its own token — which is also why a passkey's binding to the relying-party id
 costs nothing here.
 
-**The client roster is blocked on authentication, not on effort.** `GET /idp/api/clients` takes a
-client's own id and secret over HTTP Basic and answers with that caller's own commissions. A
-browser has no such pair, and a page asking a person to paste a client secret would teach exactly
-the habit an identity provider exists to end. A session now exists to derive a caller from, but the
-listing API that would read it does not: the roster is owner-Basic today, and a
-session-authenticated read of it is named as open work in the plan rather than guessed at here. So
-the page still reads nothing rather than reading it badly.
+**Commissioned clients are not listed.** A commission is a short-lived credential a service makes
+for one context, such as a CI run. `GET /idp/api/clients` shows a service only its own, over its
+own Basic pair, and there is no listing across owners.
 
 **Bare `/idp/` redirects to `/idp/clients`, and that line is still provisional.** The front door
 should land on whatever the visitor is — a sign-in form when nobody is, an administrative home when

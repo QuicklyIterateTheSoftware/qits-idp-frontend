@@ -1,18 +1,25 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import type { ServiceClient } from '../api/dto';
 import { ClientsPage } from './clients-page';
 
-/**
- * The empty state is drawn, and no request goes out to draw it.
- *
- * The second half is the assertion that will earn its keep. Reading the roster needs a client's own
- * Basic pair, which no browser session can present yet, so a call added here before the login flow
- * exists would be a guaranteed 401 — and `http.verify()` is what turns that from a console error
- * somebody scrolls past into a failing test.
- */
+/** The Clients page reads `GET /idp/api/service-clients` with the session, sorted by id. */
 describe('ClientsPage', () => {
   let http: HttpTestingController;
+
+  const CI: ServiceClient = {
+    clientId: 'dev-qits-ci',
+    source: 'database',
+    createdAt: '2026-09-10T17:00:00Z',
+    rotatedAt: null,
+  };
+  const ARTIFACTS: ServiceClient = {
+    clientId: 'dev-qits-artifacts',
+    source: 'database',
+    createdAt: '2026-09-10T17:00:00Z',
+    rotatedAt: '2026-10-01T08:00:00Z',
+  };
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -21,14 +28,39 @@ describe('ClientsPage', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  it('says why the roster is empty, and asks nobody for it', async () => {
-    const fixture = TestBed.createComponent(ClientsPage);
-    await fixture.whenStable();
+  afterEach(() => http.verify());
 
-    const page = fixture.nativeElement as HTMLElement;
-    expect(page.querySelector('h1')?.textContent).toContain('Clients');
-    expect(page.querySelector('app-empty')?.textContent).toContain('No client is listed');
+  async function open(answer: (req: ReturnType<HttpTestingController['expectOne']>) => void) {
+    const fixture = TestBed.createComponent(ClientsPage);
+    answer(http.expectOne({ method: 'GET', url: '/idp/api/service-clients' }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('lists every service client, sorted by id, and never a secret', async () => {
+    const page = await open((req) => req.flush([CI, ARTIFACTS]));
+
+    const rows = page.querySelectorAll('tbody tr');
+    expect(rows.length).toBe(2);
+    expect(rows[0].textContent).toContain('dev-qits-artifacts');
+    expect(rows[1].textContent).toContain('dev-qits-ci');
+    expect(rows[1].textContent).toContain('Never');
+    expect(page.querySelector('table')?.textContent?.toLowerCase()).not.toContain('secret:');
+  });
+
+  it('says there are none when the list is empty', async () => {
+    const page = await open((req) => req.flush([]));
+
     expect(page.querySelector('table')).toBeNull();
-    http.verify();
+    expect(page.querySelector('app-empty')?.textContent).toContain('no service clients');
+  });
+
+  it('tells a session without qits:admin that it needs the role', async () => {
+    const page = await open((req) =>
+      req.flush({ error: 'access_denied' }, { status: 403, statusText: 'Forbidden' }),
+    );
+
+    expect(page.querySelector('[role=alert]')?.textContent).toContain('qits:admin');
   });
 });

@@ -44,6 +44,7 @@ describe('App', () => {
     expect(layout.tagName.toLowerCase()).toBe('app-admin-frame');
     expect(layout.querySelector('nav')).toBeNull();
     expect(layout.querySelector('main app-clients-page')).not.toBeNull();
+    http.expectOne('/idp/api/service-clients').flush([]);
     http.verify();
   });
 
@@ -54,6 +55,7 @@ describe('App', () => {
     expect(layout.tagName.toLowerCase()).toBe('app-admin-frame');
     expect(layout.querySelector('nav')).toBeNull();
     expect(layout.querySelector('main app-users-page')).not.toBeNull();
+    http.expectOne('/idp/api/users').flush([]);
     http.verify();
   });
 
